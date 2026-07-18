@@ -77,13 +77,23 @@ def _extract_glb_url(result: dict) -> str:
     raise ValueError(f"no GLB url found in result keys={list(result.keys())}")
 
 
-def image_to_3d(image_url_or_path: str, out_path: str | Path, model: str | None = None) -> Path:
+def image_to_3d(
+    image_url_or_path: str,
+    out_path: str | Path,
+    model: str | None = None,
+    extra_views: dict[str, str] | None = None,
+) -> Path:
     """Generate a 3D mesh (GLB) from a single (ideally background-removed) image.
 
     `image_url_or_path` may be an already-hosted url or a local file (uploaded
     automatically). If `model` is given only that id is tried; otherwise the
     ids in IMAGE_TO_3D_MODELS are tried in order until one succeeds. Downloads
     the resulting GLB to `out_path` and returns it.
+
+    `extra_views` (multiview branch): optional Hunyuan v3 view slots
+    (`back_image_url`/`left_image_url`/`right_image_url`) -> image URL. Supplying
+    them forces a solid volume instead of a flat relief. Only applied to the
+    hunyuan3d-v3 model (the v2 family ignores them).
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +116,9 @@ def image_to_3d(image_url_or_path: str, out_path: str | Path, model: str | None 
             if "hunyuan3d-v3" in mid:
                 args["generate_type"] = "Normal"  # Normal=textured (vs LowPoly/Geometry)
                 args["enable_pbr"] = True
+                # Multiview: synthesized back/left/right views -> real volume.
+                if extra_views:
+                    args.update(extra_views)
             else:
                 args["textured_mesh"] = True
             result = fal_client.subscribe(mid, arguments=args)
