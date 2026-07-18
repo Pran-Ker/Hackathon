@@ -32,6 +32,8 @@ const captionEl = document.getElementById("caption");
 const hintEl = document.getElementById("hint");
 const dropzone = document.getElementById("dropzone");
 const toastEl = document.getElementById("toast");
+const historyEl = document.getElementById("history");
+const historyClearEl = document.getElementById("historyClear");
 const progressEl = document.getElementById("progress");
 const timerEl = document.getElementById("timer");
 const fillEl = document.getElementById("fill");
@@ -132,6 +134,7 @@ function buildPresets() {
 
 async function selectPreset(p) {
   setActivePreset(p.id);
+  setActiveHistory(null);
   hideCaption();
   try {
     await loadGLB(p.url);
@@ -237,6 +240,14 @@ async function generateFromImage(file) {
     await loadGLB(glbUrl);
     stopProgress();
     showCaption(data);
+    addHistory({
+      id: `gen-${historySeq++}`,
+      thumbUrl: URL.createObjectURL(file),
+      glbUrl,
+      name: data.name,
+      data,
+      active: true,
+    });
   } catch (err) {
     console.error("Generate failed:", err);
     stopProgress();
@@ -244,6 +255,77 @@ async function generateFromImage(file) {
     // Previous model stays on screen; nothing is cleared.
   }
 }
+
+// ---- History sidebar ------------------------------------------------------
+// Each live generation is remembered as a thumbnail (the dropped image) plus
+// the resulting GLB url, so previous results can be revisited or deleted.
+const history = [];
+
+function renderHistory() {
+  historyEl.classList.toggle("show", history.length > 0);
+  // Wipe the thumbnails but keep the header row (first child).
+  [...historyEl.querySelectorAll(".thumb")].forEach((el) => el.remove());
+  history.forEach((item) => {
+    const thumb = document.createElement("div");
+    thumb.className = "thumb" + (item.active ? " active" : "");
+    thumb.title = item.name || "Generated model";
+    thumb.innerHTML = `<img src="${item.thumbUrl}" alt="${item.name || "model"}" />` +
+      `<button class="del" title="Delete">&times;</button>`;
+    thumb.addEventListener("click", (e) => {
+      if (e.target.closest(".del")) return;
+      revisitHistory(item);
+    });
+    thumb.querySelector(".del").addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteHistory(item);
+    });
+    historyEl.appendChild(thumb);
+  });
+}
+
+function addHistory(item) {
+  history.forEach((h) => (h.active = false));
+  item.active = true;
+  history.unshift(item);
+  renderHistory();
+}
+
+function setActiveHistory(id) {
+  history.forEach((h) => (h.active = h.id === id));
+  renderHistory();
+}
+
+async function revisitHistory(item) {
+  setActivePreset(null);
+  try {
+    await loadGLB(item.glbUrl);
+    setActiveHistory(item.id);
+    showCaption(item.data || {});
+  } catch {
+    showError("Couldn't reload that model.");
+  }
+}
+
+function deleteHistory(item) {
+  const idx = history.indexOf(item);
+  if (idx === -1) return;
+  history.splice(idx, 1);
+  // Release the object URL for the dropped-image thumbnail to avoid leaks.
+  if (item.thumbUrl.startsWith("blob:")) URL.revokeObjectURL(item.thumbUrl);
+  renderHistory();
+}
+
+function clearHistory() {
+  history.forEach((item) => {
+    if (item.thumbUrl.startsWith("blob:")) URL.revokeObjectURL(item.thumbUrl);
+  });
+  history.length = 0;
+  renderHistory();
+}
+
+historyClearEl.addEventListener("click", clearHistory);
+
+let historySeq = 0;
 
 // ---- Drag & drop ----------------------------------------------------------
 let dragDepth = 0;
