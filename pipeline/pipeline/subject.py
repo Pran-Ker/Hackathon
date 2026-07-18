@@ -63,6 +63,31 @@ def isolate_subject(image_path: str | Path, out_dir: str | Path) -> SubjectResul
     stem = image_path.stem
     rgba_path = _download(cutout_url, out_dir / f"{stem}_cutout.png")
 
+    # Pad + center the cutout onto a larger transparent square so the subject
+    # never touches the frame edges. This reduces flat "relief on a slab" 3D
+    # outputs. Fully failsafe: on ANY error keep cutout_url + rgba_path as-is.
+    try:
+        from PIL import Image
+
+        PAD_RATIO = 1.35
+        with Image.open(rgba_path) as im:
+            im = im.convert("RGBA")
+            bbox = im.getchannel("A").getbbox()
+            if bbox is not None:
+                cropped = im.crop(bbox)
+                w, h = cropped.size
+                side = int(round(max(w, h) * PAD_RATIO))
+                side = max(side, w, h, 1)
+                canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+                canvas.paste(cropped, ((side - w) // 2, (side - h) // 2), cropped)
+                padded_path = out_dir / f"{stem}_cutout_padded.png"
+                canvas.save(padded_path)
+                padded_url = fal_client.upload_file(str(padded_path))
+                rgba_path = padded_path
+                cutout_url = padded_url
+    except Exception:
+        pass
+
     mask = result.get("mask_image")
     mask_url = mask["url"] if isinstance(mask, dict) and mask.get("url") else cutout_url
     mask_path = _download(mask_url, out_dir / f"{stem}_mask.png")

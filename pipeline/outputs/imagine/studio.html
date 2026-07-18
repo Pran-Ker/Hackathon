@@ -1,0 +1,505 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Image → 3D Studio</title>
+<style>
+  :root { --bg:#0e0e11; --panel:#17171c; --line:#26262e; --fg:#e6e6ec; --dim:#8a8a95; --accent:#6ea8fe; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 13px ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
+  #app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+
+  /* sidebar */
+  #side { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  #side h1 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin: 0; padding: 16px 16px 10px; }
+  #list { overflow-y: auto; padding: 4px 10px 16px; }
+
+  /* how-to */
+  .howto { margin: 0 12px 12px; padding: 11px 12px; background: #14203a; border: 1px solid #29406e;
+    border-radius: 10px; }
+  .howto .h { display: flex; align-items: center; gap: 7px; font-weight: 600; color: #cfe0ff; margin-bottom: 7px; }
+  .howto .h .plus { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 6px;
+    background: var(--accent); color: #0e0e11; font-weight: 800; font-size: 13px; line-height: 1; }
+  .howto ol { margin: 0; padding-left: 18px; color: var(--dim); line-height: 1.55; }
+  .howto ol b { color: var(--fg); font-weight: 600; }
+  .howto .note { margin-top: 7px; color: #7f8aa3; font-size: 11px; }
+  .drop { margin-top: 4px; border: 1.5px dashed #3a4a6e; border-radius: 9px; padding: 16px 10px;
+    text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: rgba(110,168,254,.08); }
+  .drop .dz { color: #cfe0ff; font-weight: 600; font-size: 12px; line-height: 1.5; }
+  .drop .dz span { color: var(--dim); font-weight: 400; }
+  .upstatus { margin-top: 9px; padding: 10px 11px; border-radius: 9px; background: #101826; border: 1px solid #29406e;
+    font-size: 11px; color: #cfe0ff; line-height: 1.55; }
+  .upstatus.err { background: #2a1416; border-color: #6e2929; color: #ffb3b3; }
+  .upstatus.done { background: #12241a; border-color: #2f6e45; color: #b8f0cf; }
+  .upstatus .big { font-weight: 600; color: #eaf1ff; }
+  .upstatus .sub { color: #7f8aa3; font-size: 10.5px; margin-top: 3px; }
+  .upstatus .bar { margin-top: 8px; height: 3px; border-radius: 3px; background: #1c2942; overflow: hidden; }
+  .upstatus .bar::after { content: ""; display: block; height: 100%; width: 40%; border-radius: 3px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: slide 1.3s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid #3a4a6e; border-top-color: var(--accent);
+    border-radius: 50%; animation: sp .8s linear infinite; vertical-align: -1px; margin-right: 5px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .card { position: relative; display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 10px;
+    cursor: pointer; border: 1px solid transparent; margin-bottom: 3px; transition: background .12s, border-color .12s; }
+  .card:hover { background: #1e1e25; }
+  .card.sel { background: #1c2745; border-color: var(--accent); box-shadow: 0 0 0 1px rgba(110,168,254,.35), 0 4px 14px rgba(110,168,254,.12); }
+  .card.sel::before { content: ""; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 3px;
+    border-radius: 3px; background: var(--accent); }
+  .card.sel .name { color: #fff; }
+  .card img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; background: #000; flex: none; }
+  .card.sel img { outline: 1px solid rgba(110,168,254,.5); outline-offset: -1px; }
+  .card .meta { min-width: 0; }
+  .card .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .sub { color: var(--dim); font-size: 11px; margin-top: 2px; }
+  .card .badge { display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 5px; font-size: 9.5px;
+    font-weight: 700; letter-spacing: .03em; background: rgba(110,168,254,.16); color: var(--accent); vertical-align: 1px; }
+
+  /* main */
+  #main { position: relative; min-width: 0; }
+  canvas { display: block; }
+  #bar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; gap: 8px; align-items: center; pointer-events: none; }
+  #bar .grp { pointer-events: auto; background: rgba(20,20,26,.82); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; display: flex; gap: 10px; align-items: center; }
+  #bar .stats { color: var(--dim); font: 11px ui-monospace, monospace; }
+  button { font: inherit; color: var(--fg); background: #262631; border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.mode { background: transparent; color: var(--dim); padding: 5px 11px; transition: background .12s, color .12s, border-color .12s; }
+  button.mode:hover { color: var(--fg); }
+  button.mode.sel { background: #1e2740; color: var(--fg); border-color: var(--accent); }
+  label { display: inline-flex; gap: 5px; align-items: center; color: var(--dim); cursor: pointer; }
+  .spacer { flex: 1; }
+
+  /* input preview chip */
+  #preview { position: absolute; bottom: 12px; left: 12px; background: rgba(20,20,26,.82); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; gap: 10px; align-items: center; }
+  #preview img { width: 72px; height: 72px; object-fit: contain; border-radius: 6px; background: #000; }
+  #preview .cap { color: var(--dim); font-size: 11px; }
+  #preview .cap b { color: var(--fg); display: block; margin-bottom: 3px; }
+
+  /* code drawer */
+  #code { position: absolute; inset: 0 0 0 auto; width: min(720px, 82%); background: var(--panel);
+    border-left: 1px solid var(--line); transform: translateX(100%); transition: transform .22s ease;
+    display: flex; flex-direction: column; }
+  #code.open { transform: none; }
+  #code header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  #code header .t { font-weight: 600; }
+  #code header .spacer { flex: 1; }
+  #code pre { margin: 0; padding: 14px; overflow: auto; flex: 1; font: 12px/1.5 ui-monospace, monospace; color: #cdd3e0; white-space: pre; }
+  #code .hint { padding: 8px 14px; color: var(--dim); font-size: 11px; border-bottom: 1px solid var(--line); }
+  #err { position: absolute; inset: 0; display: none; place-items: center; color: #ff6b6b; font: 13px ui-monospace, monospace; padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>Input images</h1>
+    <div class="howto">
+      <div class="h"><span class="plus">+</span> Add your own image</div>
+      <div id="drop" class="drop">
+        <input type="file" id="file" accept="image/*" hidden />
+        <div class="dz">Drop a photo here<br /><span>or click to choose</span></div>
+      </div>
+      <div id="upStatus" class="upstatus" style="display:none"></div>
+      <div class="note">Clean subject on a plain background works best. Runs cutout → generative 3D (~3–4 min).</div>
+    </div>
+    <div id="list"></div>
+  </aside>
+  <main id="main">
+    <div id="bar">
+      <div class="grp stats" id="stats">select an image →</div>
+      <div class="spacer"></div>
+      <div class="grp">
+        <label><input type="checkbox" id="spin" checked /> spin</label>
+        <label><input type="checkbox" id="wire" /> wireframe</label>
+        <button id="copyBtn">&lt;/&gt; Code</button>
+      </div>
+    </div>
+    <div id="preview" style="display:none">
+      <img id="pvImg" />
+      <div class="cap"><b>source image</b><span id="pvName"></span></div>
+    </div>
+    <div id="err"></div>
+    <section id="code">
+      <header>
+        <span class="t" id="codeTitle">Standalone .html</span>
+        <span class="spacer"></span>
+        <button id="modeHtml" class="mode sel">HTML file</button>
+        <button id="modeConsole" class="mode">Console</button>
+        <button id="modeNative" class="mode">Native</button>
+        <button id="copyClip">Copy</button>
+        <button id="codeClose">Close</button>
+      </header>
+      <div class="hint" id="codeHint"></div>
+      <pre id="codeText"></pre>
+    </section>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "./_three.module.js",
+  "three/addons/": "./_jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+
+// ---- renderer / scene ----
+const main = document.getElementById("main");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+main.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e0e11);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 1.2); key.position.set(3, 5, 4); scene.add(key);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 2.0;
+
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+
+function resize() {
+  const w = main.clientWidth, h = main.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+// ---- model loading ----
+let current = null, meshes = [];
+function clear() { if (current) { scene.remove(current); current.traverse(o => { if (o.isMesh) { o.geometry.dispose(); } }); } current = null; meshes = []; }
+
+function frame(root) {
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.sub(center);
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  camera.position.set(0, size.y * 0.1, maxDim * 1.9);
+  camera.near = maxDim / 100; camera.far = maxDim * 100; camera.updateProjectionMatrix();
+  controls.target.set(0, 0, 0); controls.update();
+  return size;
+}
+
+function loadRun(run) {
+  clear();
+  const errEl = document.getElementById("err"); errEl.style.display = "none";
+  document.getElementById("stats").textContent = "loading…";
+  loader.load(run.glbUrl, (gltf) => {
+    current = gltf.scene; scene.add(current);
+    const size = frame(current);
+    let tris = 0;
+    current.traverse(o => { if (o.isMesh) { meshes.push(o); const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
+    meshes.forEach(m => m.material.wireframe = document.getElementById("wire").checked);
+    document.getElementById("stats").innerHTML =
+      `<b style="color:#e6e6ec">${run.id}</b> · ${Math.round(tris).toLocaleString()} tris · ${run.optSize ?? run.rawSize} MB`;
+  }, undefined, (e) => { errEl.style.display = "grid"; errEl.textContent = "load error: " + (e?.message || e); });
+
+  const pv = document.getElementById("preview"); pv.style.display = "flex";
+  document.getElementById("pvImg").src = run.inputUrl;
+  document.getElementById("pvName").textContent = run.input.split("/").pop();
+  selectedRun = run; renderCode();
+}
+
+// ---- code drawer mode (HTML file / Console / Native) ----
+let selectedRun = null, codeMode = "html";
+const CODE_MODES = {
+  html:    { title: "Standalone .html", hint: "Paste into any <code>.html</code> file and open it. Keep this server running, or swap <code>MODEL_URL</code>.", build: snippet },
+  console: { title: "Console injection", hint: "Open any site → DevTools (F12) → <b>Console</b> → paste → Enter. A floating viewer appears. Loads via the public HTTPS tunnel, so it works on real sites while the tunnel stays up.", build: consoleSnippet },
+  native:  { title: "Native component", hint: "A self-contained ES module with geometry baked in — <b>no GLTFLoader, no .glb fetch</b>. Import it and add to any THREE.js scene.", build: nativeSnippet },
+};
+function renderCode() {
+  if (!selectedRun) return;
+  const m = CODE_MODES[codeMode] || CODE_MODES.html;
+  document.getElementById("codeText").textContent = m.build(selectedRun);
+  document.getElementById("codeTitle").textContent = m.title;
+  document.getElementById("codeHint").innerHTML = m.hint;
+  document.getElementById("modeHtml").classList.toggle("sel", codeMode === "html");
+  document.getElementById("modeConsole").classList.toggle("sel", codeMode === "console");
+  document.getElementById("modeNative").classList.toggle("sel", codeMode === "native");
+}
+document.getElementById("modeHtml").onclick = () => { codeMode = "html"; renderCode(); };
+document.getElementById("modeConsole").onclick = () => { codeMode = "console"; renderCode(); };
+document.getElementById("modeNative").onclick = () => { codeMode = "native"; renderCode(); };
+
+// ---- native component snippet (imports Model.native.js, no loader) ----
+function nativeUrl(run) {
+  if (!run) return null;
+  if (run.nativeUrl) return run.nativeUrl;
+  if (run.native) return new URL(run.native, location.href).href;
+  return null;
+}
+function nativeSnippet(run) {
+  const url = nativeUrl(run);
+  if (!url) {
+    return `// Native Three.js component — not available for this run yet.
+//
+// This run was generated before the native transpile step, or the
+// transpile hasn't produced compiled/Model.native.js for it.
+// Re-run the pipeline for "${run.id}" to get an assets-free component.`;
+  }
+  return `// Native Three.js component — geometry is baked into the module.
+// No GLTFLoader, no .glb fetch, no meshopt decoder needed.
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { createModel } from "${url}";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e0e11);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 1.2); key.position.set(3, 5, 4); scene.add(key);
+
+// >>> the one line that matters <<<
+const model = createModel();
+scene.add(model);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.autoRotate = true;
+
+const box = new THREE.Box3().setFromObject(model);
+const size = box.getSize(new THREE.Vector3());
+const center = box.getCenter(new THREE.Vector3());
+model.position.sub(center);
+const maxDim = Math.max(size.x, size.y, size.z) || 1;
+camera.position.set(0, 0, maxDim * 1.9);
+camera.near = maxDim / 100; camera.far = maxDim * 100; camera.updateProjectionMatrix();
+controls.target.set(0, 0, 0); controls.update();
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });`;
+}
+
+// ---- copyable standalone snippet ----
+function snippet(run) {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>3D model</title>
+<style>html,body{margin:0;height:100%;background:#0e0e11;overflow:hidden}</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://esm.sh/three@0.170.0",
+  "three/addons/": "https://esm.sh/three@0.170.0/examples/jsm/"
+}}
+<\/script>
+</head>
+<body>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+
+// This GLB is meshopt-compressed, so setMeshoptDecoder is required.
+const MODEL_URL = "${run.glbUrl}";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e0e11);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 1.2); key.position.set(3, 5, 4); scene.add(key);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.autoRotate = true;
+
+new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(MODEL_URL, (gltf) => {
+  const root = gltf.scene;
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.sub(center);
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  camera.position.set(0, 0, maxDim * 1.9);
+  camera.near = maxDim / 100; camera.far = maxDim * 100; camera.updateProjectionMatrix();
+  controls.target.set(0, 0, 0); controls.update();
+  scene.add(root);
+});
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+<\/script>
+</body>
+</html>`;
+}
+
+// Public HTTPS origin (Cloudflare tunnel) so console-injected snippets work on
+// real websites. LAN IP fails cross-site (mixed-content + private-network-access).
+// Update this string if the tunnel restarts with a new hostname.
+const PUBLIC_BASE = "https://academic-missed-indianapolis-laughing.trycloudflare.com";
+function publicGlb(run) { return PUBLIC_BASE ? PUBLIC_BASE.replace(/\/$/, "") + "/" + run.glb : run.glbUrl; }
+
+// ---- console snippet: paste into any live site's devtools console ----
+function consoleSnippet(run) {
+  return `/* Paste into any website's DevTools Console (F12 → Console).
+   Adds a floating 3D viewer. The GLB server must stay running + allow CORS. */
+(async () => {
+  const V = "0.170.0", B = "https://esm.sh/three@" + V;
+  const THREE = await import(B);
+  const { OrbitControls } = await import(B + "/examples/jsm/controls/OrbitControls.js");
+  const { GLTFLoader } = await import(B + "/examples/jsm/loaders/GLTFLoader.js");
+  const { RoomEnvironment } = await import(B + "/examples/jsm/environments/RoomEnvironment.js");
+  const { MeshoptDecoder } = await import(B + "/examples/jsm/libs/meshopt_decoder.module.js");
+  const MODEL_URL = "${publicGlb(run)}";
+
+  document.getElementById("__glb3d")?.remove();
+  const S = 380;
+  const box = document.createElement("div"); box.id = "__glb3d";
+  box.style.cssText = "position:fixed;right:16px;bottom:16px;width:" + S + "px;height:" + S + "px;z-index:2147483647;background:#0e0e11;border:1px solid #333;border-radius:12px;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.55)";
+  const x = document.createElement("div"); x.textContent = "×";
+  x.style.cssText = "position:absolute;top:6px;right:10px;color:#fff;font:20px sans-serif;cursor:pointer;z-index:1";
+  x.onclick = () => box.remove(); box.appendChild(x);
+  document.body.appendChild(box);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(S, S);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; box.appendChild(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0e0e11);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.6));
+  const key = new THREE.DirectionalLight(0xffffff, 1.2); key.position.set(3, 5, 4); scene.add(key);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.autoRotate = true;
+  new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(MODEL_URL, (g) => {
+    const root = g.scene, bb = new THREE.Box3().setFromObject(root);
+    const sz = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+    root.position.sub(c); const m = Math.max(sz.x, sz.y, sz.z) || 1;
+    camera.position.set(0, 0, m * 1.9); camera.near = m / 100; camera.far = m * 100;
+    camera.updateProjectionMatrix(); controls.target.set(0, 0, 0); controls.update(); scene.add(root);
+  });
+  renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+})();`;
+}
+
+// ---- ui wiring ----
+document.getElementById("spin").onchange = e => controls.autoRotate = e.target.checked;
+document.getElementById("wire").onchange = e => meshes.forEach(m => m.material.wireframe = e.target.checked);
+const codeEl = document.getElementById("code");
+document.getElementById("copyBtn").onclick = () => codeEl.classList.toggle("open");
+document.getElementById("codeClose").onclick = () => codeEl.classList.remove("open");
+document.getElementById("copyClip").onclick = async (ev) => {
+  await navigator.clipboard.writeText(document.getElementById("codeText").textContent);
+  ev.target.textContent = "Copied ✓"; setTimeout(() => ev.target.textContent = "Copy", 1200);
+};
+
+// ---- load manifest, build sidebar ----
+const list = document.getElementById("list");
+function addCard(r, { prepend = false, select = false } = {}) {
+  const card = document.createElement("div"); card.className = "card";
+  const hasNative = !!(r.nativeUrl || r.native);
+  card.innerHTML = `<img src="${r.inputUrl}" /><div class="meta"><div class="name">${r.id}${hasNative ? '<span class="badge">NATIVE</span>' : ''}</div>
+    <div class="sub">${r.optSize ?? "?"} MB${r.rawSize ? " · from " + r.rawSize + " MB" : ""}</div></div>`;
+  card.onclick = () => { document.querySelectorAll(".card").forEach(c => c.classList.remove("sel")); card.classList.add("sel"); loadRun(r); };
+  if (prepend) list.prepend(card); else list.appendChild(card);
+  if (select) card.click();
+  return card;
+}
+const runs = await (await fetch("manifest.json")).json();
+runs.forEach(r => {
+  r.glbUrl = new URL(r.glb, location.href).href;
+  r.inputUrl = new URL(r.input, location.href).href;
+  r.nativeUrl = r.native ? new URL(r.native, location.href).href : null;
+});
+runs.forEach((r, i) => addCard(r, { select: i === 0 }));
+
+// ---- upload → /imagine → new model ----
+const API_BASE = location.protocol + "//" + location.hostname + ":8000";
+const fileEl = document.getElementById("file");
+const drop = document.getElementById("drop");
+const upStatus = document.getElementById("upStatus");
+let busy = false;
+
+drop.onclick = () => !busy && fileEl.click();
+["dragenter", "dragover"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", ev => { const f = ev.dataTransfer.files[0]; if (f) upload(f); });
+fileEl.onchange = () => { if (fileEl.files[0]) upload(fileEl.files[0]); };
+
+async function upload(file) {
+  if (busy) return;
+  if (!file.type.startsWith("image/")) { setStatus(`<span class="big">Please choose an image file.</span>`, "err"); return; }
+  busy = true; drop.style.opacity = .5;
+  const localUrl = URL.createObjectURL(file);
+  const t0 = performance.now();
+  const fmt = s => s < 60 ? s + "s" : Math.floor(s/60) + "m " + (s%60).toString().padStart(2,"0") + "s";
+  const timer = setInterval(() => {
+    const s = (performance.now()-t0)/1000 | 0;
+    setStatus(`<span class="big"><span class="spin"></span>Generating 3D · ${fmt(s)}</span>
+      <div class="sub">cutout → generative 3D → optimize · usually takes ~3–4 min</div>
+      <div class="bar"></div>`);
+  }, 500);
+  setStatus(`<span class="big"><span class="spin"></span>Uploading image…</span><div class="bar"></div>`);
+  try {
+    const fd = new FormData(); fd.append("image", file);
+    const res = await fetch(API_BASE + "/imagine", { method: "POST", body: fd });
+    clearInterval(timer);
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || ("HTTP " + res.status));
+    const rel = data.glb_url.split("/files/imagine/")[1] || data.glb_url;
+    const run = {
+      id: (data.name || "your model") + " · " + rel.split("/")[0].slice(-8),
+      glb: rel, glbUrl: data.glb_url, inputUrl: localUrl,
+      nativeUrl: data.native_url || null,
+      input: file.name, optSize: data.size_after ? +(data.size_after/1e6).toFixed(1) : null,
+      rawSize: data.size_before ? +(data.size_before/1e6).toFixed(1) : null,
+    };
+    setStatus(`<span class="big">✓ Done in ${fmt((performance.now()-t0)/1000|0)}</span><div class="sub">Added to the list and selected.</div>`, "done");
+    setTimeout(() => { upStatus.style.display = "none"; }, 5000);
+    addCard(run, { prepend: true, select: true });
+  } catch (e) {
+    clearInterval(timer);
+    setStatus(`<span class="big">Generation failed</span><div class="sub">${e.message} — is the pipeline server on :8000 running?</div>`, "err");
+  } finally {
+    busy = false; drop.style.opacity = 1; fileEl.value = "";
+  }
+}
+function setStatus(html, kind) {
+  upStatus.style.display = "block";
+  upStatus.className = "upstatus" + (kind ? " " + kind : "");
+  upStatus.innerHTML = html;
+}
+</script>
+</body>
+</html>

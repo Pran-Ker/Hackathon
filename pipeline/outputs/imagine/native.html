@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Native Three.js component</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101014; overflow: hidden; color: #d9d9e0;
+    font: 13px ui-sans-serif, system-ui, sans-serif; }
+  #hud { position: fixed; top: 14px; left: 14px; background: rgba(0,0,0,.45); padding: 10px 12px;
+    border-radius: 10px; line-height: 1.6; }
+  #hud b { color: #fff; } #hud .k { color: #6ea8fe; }
+  button { font: inherit; color: #e6e6ec; background: #262631; border: 1px solid #3a3a46;
+    border-radius: 8px; padding: 5px 10px; cursor: pointer; margin-right: 6px; }
+  button.sel { border-color: #6ea8fe; background: #1e2740; }
+  #stats { color: #8a8a95; font: 11px ui-monospace, monospace; margin-top: 6px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./_three.module.js" } }
+</script>
+</head>
+<body>
+<div id="hud">
+  <b>Native Three.js component</b> <span class="k">createModel()</span> — no GLTFLoader, no assets<br />
+  <button id="bPlant" class="sel">plant (textured)</button>
+  <button id="bDemon">demon (untextured)</button>
+  <div id="stats">loading…</div>
+</div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "./_jsm/controls/OrbitControls.js";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101014);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.0));
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(2, 3, 4); scene.add(key);
+const fill = new THREE.DirectionalLight(0xaac4ff, 0.5); fill.position.set(-3, 1, -2); scene.add(fill);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 2.2;
+
+let current = null;
+async function load(url) {
+  if (current) { scene.remove(current); current.geometry.dispose(); }
+  const mod = await import(url + "?v=" + Date.now());
+  current = mod.createModel();
+  scene.add(current);
+  const box = new THREE.Box3().setFromObject(current), sz = box.getSize(new THREE.Vector3());
+  const c = box.getCenter(new THREE.Vector3()); current.position.sub(c);
+  const m = Math.max(sz.x, sz.y, sz.z) || 1;
+  camera.position.set(0, 0, m * 2.1); controls.target.set(0, 0, 0); controls.update();
+  document.getElementById("stats").textContent =
+    `${(current.geometry.index.count / 3).toLocaleString()} tris · built in-code from inlined data`;
+}
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+const bp = document.getElementById("bPlant"), bd = document.getElementById("bDemon");
+bp.onclick = () => { bp.classList.add("sel"); bd.classList.remove("sel"); load("./_plant.native.js"); };
+bd.onclick = () => { bd.classList.add("sel"); bp.classList.remove("sel"); load("./_demon.native.js"); };
+load("./_plant.native.js");
+</script>
+</body>
+</html>

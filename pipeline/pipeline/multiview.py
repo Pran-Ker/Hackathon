@@ -17,6 +17,8 @@ to whatever views succeeded (down to single-view = original behavior).
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import fal_client
 
 MULTIVIEW_MODEL = "fal-ai/flux-2-lora-gallery/multiple-angles"
@@ -56,9 +58,14 @@ def generate_orbit_views(image_url: str, model: str = MULTIVIEW_MODEL) -> dict[s
     (`back_image_url`, `left_image_url`, `right_image_url`) containing only the
     views that generated successfully. Empty dict means fall back to single-view.
     """
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {
+            slot: pool.submit(_one_view, image_url, angle, model)
+            for slot, angle in ORBIT_ANGLES.items()
+        }
     views: dict[str, str] = {}
-    for slot, angle in ORBIT_ANGLES.items():
-        url = _one_view(image_url, angle, model)
+    for slot, future in futures.items():
+        url = future.result()
         if url:
             views[slot] = url
     return views
