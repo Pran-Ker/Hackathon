@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Promptable World</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0a0a0a; overflow: hidden; }
+    #app { width: 100%; height: 100%; }
+    #edit-panel {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; z-index: 10; font-family: system-ui, sans-serif;
+    }
+    #edit-panel input {
+      width: 320px; padding: 10px 14px; border-radius: 8px; border: 1px solid #333;
+      background: #151515; color: #eee; font-size: 14px;
+    }
+    #edit-panel button {
+      padding: 10px 16px; border-radius: 8px; border: none;
+      background: #eee; color: #111; font-weight: 600; cursor: pointer;
+    }
+    #hint {
+      position: fixed; top: 16px; left: 16px; color: #888; font: 13px system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="hint">click a point in the scene, then describe what happens there</div>
+  <div id="edit-panel">
+    <input id="prompt" type="text" placeholder="e.g. spawn a fire here" disabled />
+    <button id="submit" disabled>Regenerate</button>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

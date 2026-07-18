@@ -1,0 +1,28 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.depthenv/
+pipeline/.env
+.env
+*.env
+!*.env.example
+
+# node
+node_modules/
+viewer/dist/
+
+# generated assets
+*.ply
+*.splat
+frames/
+.DS_Store
+*.glb
+*.gltf
+outputs/
+assets/cutouts/
+
+# scratch / tooling
+out/
+.snapshots/
+*.log

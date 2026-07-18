@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mesh — image to 3D</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --panel: rgba(20, 20, 22, 0.82);
+      --border: rgba(255, 255, 255, 0.10);
+      --border-strong: rgba(255, 255, 255, 0.20);
+      --fg: #f2f2f3;
+      --muted: #8a8a90;
+      --accent: #6ea8fe;
+      --danger: #ff9d9d;
+      --danger-border: rgba(220, 80, 80, 0.5);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; background: var(--bg); overflow: hidden;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--fg); -webkit-font-smoothing: antialiased;
+    }
+    #app { position: fixed; inset: 0; }
+
+    /* Top-left wordmark */
+    #brand {
+      position: fixed; top: 20px; left: 22px; z-index: 10;
+      font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    #brand .dot { color: var(--accent); }
+    #brand .sub { color: var(--muted); font-weight: 400; font-size: 12px; }
+
+    /* Bottom control bar */
+    #bar {
+      position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+      z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      pointer-events: none;
+    }
+    #presets {
+      display: flex; gap: 6px; padding: 6px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; backdrop-filter: blur(12px);
+      pointer-events: auto;
+    }
+    .preset {
+      appearance: none; border: 1px solid transparent; background: transparent;
+      color: var(--muted); font: inherit; font-size: 13px; font-weight: 500;
+      padding: 7px 14px; border-radius: 8px; cursor: pointer;
+      transition: color .15s ease, background .15s ease;
+    }
+    .preset:hover { color: var(--fg); background: rgba(255,255,255,0.05); }
+    .preset.active { color: var(--fg); background: rgba(255,255,255,0.09); border-color: var(--border-strong); }
+    .preset[hidden] { display: none; }
+
+    #hint {
+      font-size: 12px; color: var(--muted); text-align: center;
+      transition: opacity .2s ease;
+    }
+
+    /* Caption for live-gen result */
+    #caption {
+      position: fixed; bottom: 22px; left: 22px; z-index: 10;
+      max-width: 300px; font-size: 12px; line-height: 1.5; color: var(--muted);
+      opacity: 0; transition: opacity .25s ease; pointer-events: none;
+    }
+    #caption.show { opacity: 1; }
+    #caption .name { color: var(--fg); font-weight: 600; font-size: 13px; text-transform: capitalize; }
+    #caption .tags { margin-top: 2px; }
+    #caption .stat { margin-top: 4px; color: var(--accent); }
+
+    /* Progress overlay (live gen) */
+    #progress {
+      position: fixed; inset: 0; z-index: 30; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(10, 10, 10, 0.55); backdrop-filter: blur(3px);
+    }
+    #progress.show { display: flex; }
+    .card {
+      width: min(420px, 88vw); padding: 26px 28px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 16px; backdrop-filter: blur(14px);
+    }
+    .card .title { font-size: 15px; font-weight: 600; }
+    .card .est { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+    .card .timer {
+      margin-top: 18px; font-size: 30px; font-weight: 600;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+    }
+    .track {
+      margin-top: 14px; height: 3px; border-radius: 3px;
+      background: rgba(255,255,255,0.08); overflow: hidden;
+    }
+    .track .fill {
+      height: 100%; width: 0%; border-radius: 3px; background: var(--accent);
+      transition: width .6s linear;
+    }
+    .steps { margin-top: 16px; display: flex; flex-direction: column; gap: 9px; }
+    .step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+    .step .mark {
+      width: 15px; height: 15px; border-radius: 50%; flex: 0 0 auto;
+      border: 1.5px solid rgba(255,255,255,0.22); position: relative;
+    }
+    .step.active { color: var(--fg); }
+    .step.active .mark { border-color: var(--accent); }
+    .step.active .mark::after {
+      content: ""; position: absolute; inset: 2.5px; border-radius: 50%;
+      background: var(--accent); animation: pulse 1.2s ease-in-out infinite;
+    }
+    .step.done { color: var(--fg); }
+    .step.done .mark { border-color: var(--accent); background: var(--accent); }
+    .step.done .mark::after {
+      content: ""; position: absolute; left: 4.5px; top: 1.5px;
+      width: 3.5px; height: 7px; border: solid #0a0a0a; border-width: 0 1.6px 1.6px 0;
+      transform: rotate(45deg);
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+    /* Drop overlay */
+    #dropzone {
+      position: fixed; inset: 0; z-index: 40; pointer-events: none;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(10, 10, 10, 0.72);
+      color: var(--fg); font-size: 20px; font-weight: 600;
+    }
+    #dropzone::before {
+      content: ""; position: absolute; inset: 18px; border-radius: 16px;
+      border: 2px dashed var(--accent);
+    }
+    #dropzone.active { display: flex; }
+
+    /* Error toast */
+    #toast {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-12px);
+      z-index: 50; max-width: 90vw; padding: 11px 16px; border-radius: 10px;
+      background: var(--panel); border: 1px solid var(--danger-border);
+      color: var(--danger); font-size: 13px; backdrop-filter: blur(12px);
+      opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="brand">
+    <span>Mesh<span class="dot">.</span></span>
+    <span class="sub">image → 3D component</span>
+  </div>
+
+  <div id="bar">
+    <div id="presets"></div>
+    <div id="hint">Drag &amp; drop an image anywhere to generate — or pick a demo above.</div>
+  </div>
+
+  <div id="caption"></div>
+
+  <div id="progress">
+    <div class="card">
+      <div class="title">Generating 3D from your image</div>
+      <div class="est">This takes about 2–3 minutes — full mesh + textures, no shortcuts.</div>
+      <div class="timer" id="timer">0:00</div>
+      <div class="track"><div class="fill" id="fill"></div></div>
+      <div class="steps" id="steps"></div>
+    </div>
+  </div>
+
+  <div id="dropzone">Drop image to generate</div>
+  <div id="toast"></div>
+
+  <script type="module" src="/src/mesh.js"></script>
+</body>
+</html>
