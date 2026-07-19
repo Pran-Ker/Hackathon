@@ -1,0 +1,21 @@
+.git
+__pycache__/
+*.pyc
+.venv/
+.depthenv/
+*.env
+!*.env.example
+node_modules/
+# keep pipeline/outputs/imagine/*.html (Docker seed); drop all other outputs
+pipeline/outputs/imagine/*
+!pipeline/outputs/imagine/*.html
+pipeline/outputs/scene/
+pipeline/outputs/smoke/
+ios/
+segment/
+docs/
+.snapshots/
+*.log
+*.ply
+*.splat
+viewer/node_modules/

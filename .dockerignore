@@ -7,8 +7,7 @@
 **/.venv
 **/node_modules
 
-# viewer is built inside the image
-viewer/dist
+# viewer/dist is built locally and shipped in the context (see Dockerfile)
 
 # generated artifacts — keep only the committed seed HTML
 pipeline/outputs/**
@@ -22,3 +21,7 @@ run-services.sh
 
 # iOS app is not part of the deployed service
 ios
+
+viewer/node_modules
+viewer/src
+viewer/fixtures

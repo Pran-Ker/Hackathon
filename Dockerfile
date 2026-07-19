@@ -2,17 +2,12 @@
 # Stage 1 builds the Three.js viewer; stage 2 runs the FastAPI pipeline and
 # serves the built viewer at /app via pipeline.deploy_app:app.
 
-# ---------- Stage 1: viewer build ----------
-FROM node:20 AS viewer
-WORKDIR /viewer
-COPY viewer/package.json viewer/package-lock.json ./
-RUN npm ci
-COPY viewer/ ./
-# Cap Node's heap: Railway's hobby builder OOM-kills an uncapped vite build
-# (exit 137); a low ceiling forces GC instead of ballooning past the limit.
-RUN NODE_OPTIONS=--max-old-space-size=1024 npm run build
+# The viewer is built LOCALLY before deploying (Railway's hobby builder
+# OOM-kills the vite build — exit 137 — even with a capped node heap):
+#     cd viewer && npm ci && npm run build
+# docs/DEPLOY.md covers it; viewer/dist is uploaded via .railwayignore.
 
-# ---------- Stage 2: python runtime ----------
+# ---------- Python runtime ----------
 FROM python:3.12-slim AS runtime
 
 # ffmpeg for video-frame extraction, libgl/libglib for any cv2/GL consumers.
@@ -42,8 +37,8 @@ RUN uv sync --frozen --no-dev
 # outputs/ hides the copies baked into the image. deploy_app re-seeds on boot.
 COPY pipeline/outputs/imagine/*.html /srv/seed/imagine/
 
-# Built viewer.
-COPY --from=viewer /viewer/dist /srv/viewer-dist
+# Built viewer (from the local `npm run build`, see header note).
+COPY viewer/dist /srv/viewer-dist
 ENV VIEWER_DIST=/srv/viewer-dist \
     SEED_DIR=/srv/seed \
     PATH="/srv/pipeline/.venv/bin:$PATH"
