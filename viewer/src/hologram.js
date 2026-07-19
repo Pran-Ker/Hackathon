@@ -63,12 +63,14 @@ const DEEP_SCENE = new URLSearchParams(location.search).get("scene");
 if (DEEP_SCENE && !MOCK) {
   scanStartedAt = performance.now();
   fetch(`${API}/api/scene/${encodeURIComponent(DEEP_SCENE)}`)
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    .then(async (res) => {
+      if (!res.ok) throw new Error(await errorDetail(res));
       return res.json();
     })
     .then((scene3d) => enterResultStage(scene3d))
     .catch((err) => {
+      landing.classList.remove("hidden"); // enterResultStage may have hidden it
+      hudFooter.hidden = true;
       landingError.textContent = `SCENE LOAD FAILED — ${err.message || err}`;
       landingError.hidden = false;
     });
@@ -179,10 +181,12 @@ scanBtn.addEventListener("click", async () => {
     const [scene3d] = await Promise.all([requestScene(), sleep(MIN_SCAN_MS)]);
     finishTicker();
     await sleep(250);
-    enterResultStage(scene3d);
+    await enterResultStage(scene3d); // awaited: async load failures land in this catch
   } catch (err) {
     console.error(err);
     clearInterval(tickerTimer);
+    landing.classList.remove("hidden"); // enterResultStage may have hidden it
+    hudFooter.hidden = true;
     scanline.hidden = true;
     scanBtn.disabled = false;
     promptInput.disabled = false;
@@ -192,7 +196,9 @@ scanBtn.addEventListener("click", async () => {
 });
 
 async function requestScene() {
-  const prompt = promptInput.value.trim() || promptInput.placeholder;
+  // Empty prompt stays empty: the backend's auto mode (top objects by score)
+  // only triggers on "", so never substitute the placeholder text.
+  const prompt = promptInput.value.trim();
   if (MOCK) {
     await sleep(400);
     return structuredClone(fixture);
@@ -201,12 +207,19 @@ async function requestScene() {
   form.append("file", pickedFile, pickedFile.name);
   form.append("prompt", prompt);
   const res = await fetch(`${API}/api/scene`, { method: "POST", body: form });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try { detail = (await res.json()).detail || detail; } catch { /* keep */ }
-    throw new Error(detail);
-  }
+  if (!res.ok) throw new Error(await errorDetail(res));
   return res.json();
+}
+
+// Backend errors are {"error": message} (server.py _error); keep .detail as a
+// fallback for FastAPI-shaped errors.
+async function errorDetail(res) {
+  let detail = `HTTP ${res.status}`;
+  try {
+    const body = await res.json();
+    detail = body.error || body.detail || detail;
+  } catch { /* keep */ }
+  return detail;
 }
 
 // ---- three scene ----------------------------------------------------------
@@ -329,8 +342,6 @@ function setEmissive(h, intensity) {
 // ---- result stage ---------------------------------------------------------
 async function enterResultStage(scene3d) {
   initThree();
-  landing.classList.add("hidden");
-  hudFooter.hidden = false;
 
   const nObj = scene3d.objects.length;
   const total = scene3d.timings?.total ?? scene3d.timings?.total_s;
@@ -341,7 +352,16 @@ async function enterResultStage(scene3d) {
 
   if (scene3d.error) showBanner(`PARTIAL SCENE — ${scene3d.error}`);
 
+  // Start the (large, uncompressed) combined scene GLB streaming NOW so it
+  // overlaps the frame load; progress surfaces in the banner below.
+  const glbPromise = scene3d.scene_glb_url ? loadSceneGlb(absUrl(scene3d.scene_glb_url)) : null;
+  glbPromise?.catch(() => {}); // handled at the await site; silence early unhandledrejection
+
   const frame = await loadFramePlane(absUrl(scene3d.frame_url));
+  // Landing hides only after the frame is actually up — a failed load rejects
+  // into the caller's catch with the landing (and its error box) still visible.
+  landing.classList.add("hidden");
+  hudFooter.hidden = false;
   scene.add(frame.mesh);
   holo.frame = frame.mesh;
 
@@ -362,13 +382,14 @@ async function enterResultStage(scene3d) {
 
   // Prefer one shared scene glb; fall back to per-object glbs.
   let sceneNodes = null;
-  if (scene3d.scene_glb_url) {
+  if (glbPromise) {
     try {
-      const gltf = await gltfLoader.loadAsync(absUrl(scene3d.scene_glb_url));
+      const gltf = await glbPromise;
       sceneNodes = mapSceneNodes(gltf.scene, scene3d.objects);
     } catch (e) {
       console.warn("scene glb failed, falling back to per-object glbs", e);
     }
+    if (banner.textContent.startsWith("LOADING SCENE MESH")) banner.hidden = true;
   }
 
   const fit = computeSceneFit(scene3d.objects, frame, dist);
@@ -387,6 +408,20 @@ async function enterResultStage(scene3d) {
       console.warn(`object ${obj.id} (${obj.label}) failed to load`, e);
     }
   }));
+}
+
+// gltfLoader.load with download progress surfaced in the banner — the combined
+// Align GLB is served uncompressed and can be tens of MB, so the stage must
+// not read as frozen while it streams.
+function loadSceneGlb(url) {
+  return new Promise((resolve, reject) => {
+    gltfLoader.load(url, resolve, (e) => {
+      if (e.total) {
+        banner.textContent = `LOADING SCENE MESH — ${Math.round((100 * e.loaded) / e.total)}%`;
+        banner.hidden = false;
+      }
+    }, reject);
+  });
 }
 
 function loadFramePlane(url) {

@@ -488,8 +488,23 @@ def build_scene(work_dir: Path, prompt: str, frame_meta: dict | None = None) -> 
             for entry in rec.get("metadata") or []:
                 if isinstance(entry, dict) and isinstance(entry.get("object_index"), int):
                     meta_by_index[entry["object_index"]] = entry
+            # Partial Align returns COMPACTED success lists (no null placeholder
+            # for a missed object) with metadata parallel to them. Key parts by
+            # object_index too, else a mid-list miss shifts every later mesh
+            # onto the wrong object. Falls back to position when metadata is
+            # absent/unusable (identical to the old behavior).
+            metadata = rec.get("metadata") or []
+            part_by_index: dict[int, dict] = {}
+            for j, part in enumerate(parts):
+                entry = metadata[j] if j < len(metadata) else None
+                idx = (
+                    entry["object_index"]
+                    if isinstance(entry, dict) and isinstance(entry.get("object_index"), int)
+                    else j
+                )
+                part_by_index[idx] = part
             for i, obj in enumerate(objects):
-                part = parts[i] if i < len(parts) else {}
+                part = part_by_index.get(i) or {}
                 remote_glb = part.get("glb_url")
                 obj["splat_url"] = part.get("splat_url")
                 meta = meta_by_index.get(i)

@@ -547,8 +547,10 @@ async def _imagine_one(request: Request, image: UploadFile, include_native: bool
             trace["error"] = str(exc)
             trace_path.write_text(json.dumps(trace, indent=2))
             return 500, {"error": f"3D generation failed: {exc}"}
-        finally:
-            _locks.pop(digest, None)
+        # NOTE: never pop the lock here — a waiter may hold a reference to it,
+        # and popping lets a third request create a second lock and run the
+        # pipeline concurrently in the same work_dir. Locks are keyed by the
+        # same digest as the on-disk cache, so growth is bounded.
 
     await _refresh_manifest()  # keep the studio sidebar durable + current
     return 200, _response(request, work_dir, result, cached=False, include_native=include_native)
@@ -763,15 +765,18 @@ async def scene_create(
     req_id = digest[:16]
     work_dir = SCENE_DIR / req_id
 
+    # Failed runs (scene persisted with `error`: segment outage, Align 5xx) are
+    # cache MISSES on POST so a retry can heal; GET /api/scene/{id} still
+    # replays them. Genuine no-match runs have error=None and stay cached.
     scene = _cached_scene(work_dir)
-    if scene:
+    if scene and not scene.get("error"):
         print(f"[scene {req_id}] cache hit (idempotent)", flush=True)
         return _scene_response(request, work_dir, scene, cached=True)
 
     lock = _scene_locks.setdefault(digest, asyncio.Lock())
     async with lock:
         scene = _cached_scene(work_dir)
-        if scene:
+        if scene and not scene.get("error"):
             return _scene_response(request, work_dir, scene, cached=True)
 
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -809,8 +814,9 @@ async def scene_create(
             trace["error"] = str(exc)
             trace_path.write_text(json.dumps(trace, indent=2))
             return _error(500, f"Scene pipeline failed: {exc}")
-        finally:
-            _scene_locks.pop(digest, None)
+        # NOTE: never pop the lock — popping while a waiter holds the old lock
+        # object lets a later duplicate create a NEW lock and run build_scene
+        # concurrently in the same work_dir (interleaved cutouts/scene.json).
 
     return _scene_response(request, work_dir, scene, cached=False)
 

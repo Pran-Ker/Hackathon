@@ -48,4 +48,8 @@ ENV VIEWER_DIST=/srv/viewer-dist \
 
 EXPOSE 8000
 # Shell form so Railway's $PORT expands; default 8000 for local runs.
-CMD ["sh", "-c", "uvicorn pipeline.deploy_app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# --forwarded-allow-ips='*': TLS terminates at the platform edge and the proxy
+# hits uvicorn from a non-loopback IP — without this, X-Forwarded-Proto is
+# ignored, request.base_url stays http://, and every /files asset URL is
+# mixed-content-blocked on the https page.
+CMD ["sh", "-c", "uvicorn pipeline.deploy_app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips '*'"]

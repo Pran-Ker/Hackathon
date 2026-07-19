@@ -43,15 +43,19 @@ def mask_png(box: tuple[int, int, int, int] | None) -> bytes:
 
 MASK_BIG = "http://fake.fal/mask_big.png"      # 40x40 square
 MASK_MED = "http://fake.fal/mask_med.png"      # 30x30 square
+MASK_SML = "http://fake.fal/mask_sml.png"      # 30x30 square (bottom-left)
 MASK_TINY = "http://fake.fal/mask_tiny.png"    # 2x2 -> must be dropped
 GLB_0 = "http://fake.fal/obj0.glb"
+GLB_2 = "http://fake.fal/obj2.glb"
 SCENE_GLB = "http://fake.fal/scene.glb"
 
 FAKE_FILES = {
     MASK_BIG: mask_png((20, 20, 60, 60)),
     MASK_MED: mask_png((70, 70, 100, 100)),
+    MASK_SML: mask_png((10, 70, 40, 100)),
     MASK_TINY: mask_png((5, 5, 7, 7)),
     GLB_0: b"GLB0-BYTES",
+    GLB_2: b"GLB2-BYTES",
     SCENE_GLB: b"SCENE-GLB-BYTES",
 }
 
@@ -195,6 +199,63 @@ def test_full_flow_with_tiny_drop_and_partial_align(client, fal):
     assert {"upload", "segment", "cutouts", "align", "describe", "total"} <= set(body["timings"])
 
 
+def test_partial_align_mid_list_miss_keys_parts_by_object_index(client, fal):
+    """Align misses the MIDDLE object: individual_glbs/parts arrive as a
+    COMPACTED success list ([glb0, glb2], no null placeholder) with metadata
+    keyed by object_index (0 and 2). Object 1 must get glb_url null and object
+    2 must receive glb2 + its own transform — not object 2's mesh under obj_1."""
+    fal.seg = seg_result(
+        [MASK_BIG, MASK_MED, MASK_SML], ["cup", "plant", "book"], [0.9, 0.8, 0.7]
+    )
+    fal.rec = {
+        "model_glb": SCENE_GLB,
+        "individual_glbs": [GLB_0, GLB_2],
+        "parts": [
+            {"label": "cup", "glb_url": GLB_0, "splat_url": "http://fake.fal/obj0.ply"},
+            {"label": "book", "glb_url": GLB_2, "splat_url": "http://fake.fal/obj2.ply"},
+        ],
+        "metadata": [
+            {
+                "object_index": 0,
+                "scale": [[0.5, 0.5, 0.5]],
+                "rotation": [[1.0, 0.0, 0.0, 0.0]],
+                "translation": [[1.0, 2.0, 3.0]],
+            },
+            {
+                "object_index": 2,
+                "scale": [[0.4, 0.4, 0.4]],
+                "rotation": [[1.0, 0.0, 0.0, 0.0]],
+                "translation": [[4.0, 5.0, 6.0]],
+            },
+        ],
+        "count": 2,
+    }
+    r = post_scene(client, prompt="cup,plant,book")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["error"] is None
+    o0, o1, o2 = body["objects"]
+
+    assert o0["glb_url"] and "/files/scene/" in o0["glb_url"]
+    assert o0["splat_url"] == "http://fake.fal/obj0.ply"
+    assert o0["transform"]["position"] == [-1.0, 2.0, -3.0]
+
+    # the missed middle object: no mesh, no splat, no transform — cutout kept
+    assert o1["label"] == "plant" and o1["glb_url"] is None
+    assert o1["splat_url"] is None and o1["transform"] is None
+    assert o1["cutout_url"]
+
+    # the trailing success keeps ITS OWN mesh + transform (not shifted onto o1)
+    assert o2["label"] == "book" and o2["glb_url"] and "/files/scene/" in o2["glb_url"]
+    assert o2["splat_url"] == "http://fake.fal/obj2.ply"
+    assert o2["transform"]["position"] == [-4.0, 5.0, -6.0]
+
+    d = server.SCENE_DIR / body["id"]
+    assert (d / "obj_0.glb").read_bytes() == b"GLB0-BYTES"
+    assert not (d / "obj_1.glb").exists()
+    assert (d / "obj_2.glb").read_bytes() == b"GLB2-BYTES"
+
+
 def test_no_match_skips_align(client, fal):
     fal.seg = seg_result([], [], [])
     r = post_scene(client, prompt="unicorn")
@@ -238,6 +299,47 @@ def test_duplicate_request_is_cache_hit(client, fal):
     b1, b2 = r1.json(), r2.json()
     b1["cached"] = b2["cached"]
     assert b1 == b2
+
+
+def test_failed_scene_is_cache_miss_on_post_but_replayable_on_get(client, fal):
+    """A scene persisted with `error` (Align outage) must NOT be served as a
+    POST cache hit — the retry re-runs the pipeline and heals the cache.
+    GET /api/scene/{id} still replays the partial (partial > nothing)."""
+    fal.seg = seg_result([MASK_BIG], ["cup"], [0.9])
+    fal.rec = RuntimeError("transient fal outage")
+    r1 = post_scene(client)
+    assert r1.status_code == 200 and "align failed" in r1.json()["error"]
+    scene_id = r1.json()["id"]
+
+    # the errored partial is still replayable by id
+    g = client.get(f"/api/scene/{scene_id}")
+    assert g.status_code == 200 and "align failed" in g.json()["error"]
+
+    # retry with the identical bytes+prompt re-runs and heals
+    fal.rec = {
+        "model_glb": SCENE_GLB,
+        "individual_glbs": [GLB_0],
+        "parts": [{"label": "cup", "glb_url": GLB_0, "splat_url": None}],
+        "metadata": [],
+        "count": 1,
+    }
+    r2 = post_scene(client)
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["cached"] is False and body["error"] is None
+    assert body["objects"][0]["glb_url"]
+    assert fal.segment_calls == 2  # pipeline genuinely re-ran
+
+    # healed result is now the cached one
+    r3 = post_scene(client)
+    assert r3.json()["cached"] is True and r3.json()["error"] is None
+
+    # genuine no-match (error=None, objects=[]) stays cached — not a failure
+    fal.seg = seg_result([], [], [])
+    n1 = post_scene(client, prompt="unicorn")
+    n2 = post_scene(client, prompt="unicorn")
+    assert n1.json()["error"] is None and n1.json()["objects"] == []
+    assert n2.json()["cached"] is True
 
 
 def test_cache_key_includes_prompt(client, fal):
