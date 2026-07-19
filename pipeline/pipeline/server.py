@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import socket
 import time
 from pathlib import Path
@@ -53,7 +54,8 @@ from pipeline.subject import describe_subject, isolate_subject
 from pipeline.transpile import transpile_glb_to_component
 
 # outputs/ lives at pipeline/outputs (one level above this package dir).
-OUTPUTS_DIR = (Path(__file__).resolve().parent.parent / "outputs")
+# OUTPUTS_DIR env overrides it in deploys (e.g. a Railway volume at /data).
+OUTPUTS_DIR = Path(os.environ.get("OUTPUTS_DIR") or (Path(__file__).resolve().parent.parent / "outputs"))
 IMAGINE_DIR = OUTPUTS_DIR / "imagine"
 IMAGINE_DIR.mkdir(parents=True, exist_ok=True)
 SCENE_DIR = OUTPUTS_DIR / "scene"

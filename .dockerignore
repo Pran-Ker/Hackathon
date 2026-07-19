@@ -19,3 +19,6 @@ segment
 docs
 *.md
 run-services.sh
+
+# iOS app is not part of the deployed service
+ios
