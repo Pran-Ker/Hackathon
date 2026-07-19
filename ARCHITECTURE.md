@@ -1,12 +1,14 @@
-# Architecture — segment → 3D (two microservices)
+# Architecture — photo → placed 3D scene (POPFRAME)
 
-Two independent services, wired by a **GCS folder-per-image** contract. One original image is
-segmented into N objects (Stage 1), each object is turned into 3D (Stage 2).
+The scene path now lives in the **pipeline** service: `POST /api/scene` takes a photo/video +
+prompt and returns a `Scene3D` JSON (frozen frame, per-object GLBs placed in one shared scene by
+SAM 3D Align, and AI-written info cards). The **segment** service still runs standalone for
+Stage 1 / GCS workflows; its core logic (`segment/pipeline_core.py`) is what the scene path calls.
 
-| Service | Dir | Port | Endpoint | Role |
+| Service | Dir | Port | Endpoints | Role |
 |---|---|---|---|---|
-| **segment** (Chinmay) | `segment/` | 8799 | `POST /api/stage1` | SAM 3 → N object cutouts → upload to `output/<image_id>/` |
-| **pipeline** (Prannay) | `pipeline/` | 8000 | `POST /imagine` | cutout → BiRefNet isolate → Hunyuan3D v3 → GLB + Three.js component |
+| **pipeline** (Prannay) | `pipeline/` | 8000 | `POST /api/scene`, `GET /api/scenes`, `POST /imagine`, `POST /imagine/batch` | scene build (SAM 3 → SAM 3D Align → describe) + hero upgrade (BiRefNet → multiview → Hunyuan3D v3 → GLB) |
+| **segment** (Chinmay) | `segment/` | 8799 | `POST /api/segment`, `POST /api/stage1` | SAM 3 → N object cutouts → upload to `output/<image_id>/` |
 
 Both start together via [`run-services.sh`](run-services.sh).
 
@@ -14,31 +16,35 @@ Both start together via [`run-services.sh`](run-services.sh).
 
 ```mermaid
 flowchart LR
-  img["Original image"]
+  img["photo / video + prompt"]
 
-  subgraph SEG["segment service · :8799 (SAM 3, Stage 1)"]
+  subgraph PIPE["pipeline service · :8000"]
     direction TB
-    s_seg["POST /api/stage1<br/>segment (per-concept + LLM retry)"]
-    s_up["upload N cutouts"]
-    s_seg --> s_up
+    scene["POST /api/scene<br/>framepick → SAM 3 → SAM 3D Align → describe"]
+    im["POST /imagine (hero upgrade, per object)<br/>BiRefNet → multiview → Hunyuan3D v3 → GLB"]
+  end
+
+  subgraph SEG["segment service · :8799 (standalone Stage 1)"]
+    direction TB
+    s_seg["POST /api/stage1<br/>segment (per-concept + LLM retry)<br/>→ upload N cutouts to GCS"]
   end
 
   gcs["GCS gs://warping-hologram-pipeline<br/>output/&lt;image_id&gt;/obj_*.png"]
 
-  subgraph PIPE["pipeline service · :8000 (Hunyuan3D, 3D)"]
-    direction TB
-    p_im["POST /imagine (per object cutout)<br/>isolate → image_to_3d"]
-    p_glb["model.glb + optimized GLB + component"]
-    p_im --> p_glb
-  end
+  viewer["viewer/ (Three.js pop-out hologram)"]
 
-  viewer["viewer/ (Three.js)"]
-
+  img --> scene
   img --> s_seg
-  s_up --> gcs
-  gcs -->|"each cutout"| p_im
-  p_glb --> viewer
+  s_seg --> gcs
+  gcs -.->|"each cutout"| im
+  scene -->|"Scene3D JSON"| viewer
+  viewer -->|"click an object"| im
+  im --> viewer
 ```
+
+Edge cases are contractual, not incidental: no matching object → `objects: []` and Align is never
+called; Align fails → objects keep their 2D cutouts plus an `error` field; describe fails → info
+fields empty, never fatal; duplicate request → cache hit keyed `sha256(input bytes + prompt)`.
 
 ## The contract (why folder-per-image)
 One input image usually has **more than one object**, so Stage 1 writes a **folder per input image**:
