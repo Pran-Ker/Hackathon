@@ -1,0 +1,21 @@
+.git
+.gitignore
+**/.env
+**/.env.*
+**/__pycache__
+**/*.pyc
+**/.venv
+**/node_modules
+
+# viewer is built inside the image
+viewer/dist
+
+# generated artifacts — keep only the committed seed HTML
+pipeline/outputs/**
+!pipeline/outputs/imagine/*.html
+
+# not part of the deployed service
+segment
+docs
+*.md
+run-services.sh
