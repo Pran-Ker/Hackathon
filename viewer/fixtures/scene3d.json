@@ -1,0 +1,169 @@
+{
+  "scene_glb_url": null,
+  "frame_url": "/mock_frame.png",
+  "prompt": "chair, plant, sneaker, mug",
+  "objects": [
+    {
+      "id": "obj_0",
+      "label": "chair",
+      "glb_url": "/chair.glb",
+      "splat_url": null,
+      "cutout_url": "/sneaker_cutout.png",
+      "bbox": [
+        180,
+        300,
+        250,
+        400
+      ],
+      "score": 0.94,
+      "info": {
+        "name": "Lounge Chair",
+        "tags": [
+          "furniture",
+          "wood",
+          "seating"
+        ],
+        "facts": [
+          "Solid volume reconstructed from 1 view",
+          "Estimated height 82cm"
+        ]
+      },
+      "transform": {
+        "position": [
+          -1.06,
+          -0.09,
+          -2.44
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.27,
+          0.27,
+          0.27
+        ]
+      },
+      "align_meta": null
+    },
+    {
+      "id": "obj_1",
+      "label": "plant",
+      "glb_url": "/plant.glb",
+      "splat_url": null,
+      "cutout_url": "/sneaker_cutout.png",
+      "bbox": [
+        560,
+        260,
+        200,
+        380
+      ],
+      "score": 0.88,
+      "info": {
+        "name": "Potted Ficus",
+        "tags": [
+          "organic",
+          "decor"
+        ],
+        "facts": [
+          "Foliage approximated as convex hull",
+          "Pot material: ceramic"
+        ]
+      },
+      "transform": {
+        "position": [
+          -0.21,
+          0.13,
+          -1.95
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          0.29,
+          0.29,
+          0.29
+        ]
+      },
+      "align_meta": null
+    },
+    {
+      "id": "obj_2",
+      "label": "sneaker",
+      "glb_url": "/sneaker.glb",
+      "splat_url": null,
+      "cutout_url": "/sneaker_cutout.png",
+      "bbox": [
+        880,
+        540,
+        290,
+        150
+      ],
+      "score": 0.97,
+      "info": {
+        "name": "Runner Sneaker",
+        "tags": [
+          "footwear",
+          "textile"
+        ],
+        "facts": [
+          "Highest confidence match",
+          "Left shoe, lace-up"
+        ]
+      },
+      "transform": {
+        "position": [
+          0.53,
+          0.03,
+          -1.65
+        ],
+        "rotation": [
+          0.0,
+          0.259,
+          0.0,
+          0.966
+        ],
+        "scale": [
+          0.51,
+          0.51,
+          0.51
+        ]
+      },
+      "align_meta": null
+    },
+    {
+      "id": "obj_3",
+      "label": "mug",
+      "glb_url": null,
+      "splat_url": null,
+      "cutout_url": "/sneaker_cutout.png",
+      "bbox": [
+        520,
+        600,
+        100,
+        100
+      ],
+      "score": 0.61,
+      "info": {
+        "name": null,
+        "tags": [
+          "ceramic"
+        ],
+        "facts": []
+      },
+      "transform": null,
+      "align_meta": null
+    }
+  ],
+  "cached": false,
+  "timings": {
+    "segment_s": 3.4,
+    "align_s": 41.8,
+    "total_s": 46.2
+  }
+}

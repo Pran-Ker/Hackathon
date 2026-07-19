@@ -8,6 +8,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         mesh: resolve(__dirname, "mesh.html"),
+        hologram: resolve(__dirname, "hologram.html"),
       },
     },
   },
