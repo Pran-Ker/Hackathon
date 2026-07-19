@@ -37,14 +37,16 @@ import socket
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from pipeline import scene_core
 from pipeline.compile_glb import compile_glb
+from pipeline.framepick import FramePickError, pick_frame
 from pipeline.generate import generate_edit_preview, image_to_3d
 from pipeline.multiview import generate_orbit_views
 from pipeline.subject import describe_subject, isolate_subject
@@ -54,9 +56,12 @@ from pipeline.transpile import transpile_glb_to_component
 OUTPUTS_DIR = (Path(__file__).resolve().parent.parent / "outputs")
 IMAGINE_DIR = OUTPUTS_DIR / "imagine"
 IMAGINE_DIR.mkdir(parents=True, exist_ok=True)
+SCENE_DIR = OUTPUTS_DIR / "scene"
+SCENE_DIR.mkdir(parents=True, exist_ok=True)
 
 TAGS_METADATA = [
     {"name": "generations", "description": "Create 3D models from photos and list past runs."},
+    {"name": "scenes", "description": "POPFRAME: photo/video → segmented objects → one shared 3D scene."},
     {"name": "meta", "description": "Liveness and LAN discovery."},
     {"name": "edit (legacy)", "description": "Old splat click-to-edit path (image only; not wired to 3D)."},
 ]
@@ -609,3 +614,248 @@ async def imagine_batch(
         else:
             results.append({"filename": im.filename, "ok": False, "error": body.get("error")})
     return {"count": len(results), "results": results}
+
+
+# ============================ POPFRAME /api/scene ============================
+class SceneObjectInfo(BaseModel):
+    name: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    facts: list[str] = Field(default_factory=list)
+
+
+class SceneObject(BaseModel):
+    id: str
+    label: str
+    glb_url: str | None = None
+    splat_url: str | None = None
+    cutout_url: str | None = None
+    bbox: list[float] | None = Field(None, description="[x, y, w, h] in frame pixels.")
+    score: float | None = None
+    info: SceneObjectInfo = Field(default_factory=SceneObjectInfo)
+    transform: dict | None = Field(
+        None,
+        description=(
+            "True placement from SAM 3D Align metadata, converted to three.js/glTF "
+            "convention (+y up, -z forward): {position:[x,y,z], rotation:[x,y,z,w] "
+            "quaternion, scale:[x,y,z]}. The combined scene GLB's node transforms "
+            "are identity — viewers MUST apply this instead."
+        ),
+    )
+    align_meta: dict | None = Field(
+        None, description="Raw per-object Align metadata entry (PyTorch3D camera-frame TRS)."
+    )
+
+
+class SceneResponse(BaseModel):
+    """Scene3D contract: the seam between the backend and the hologram viewer."""
+
+    id: str
+    scene_glb_url: str | None = Field(None, description="One shared GLB with every object placed (SAM 3D Align).")
+    frame_url: str
+    prompt: str
+    objects: list[SceneObject]
+    cached: bool
+    timings: dict
+    error: str | None = Field(None, description="Set when Align (or segment) failed; cutouts still returned.")
+    frame_meta: dict | None = Field(None, description="For video input: chosen frame index/timestamp/sharpness.")
+    dropped: list[dict] = Field(default_factory=list, description="Objects dropped for empty/tiny masks.")
+
+
+class SceneListEntry(BaseModel):
+    id: str
+    prompt: str
+    labels: list[str]
+    frame_url: str
+    scene_glb_url: str | None = None
+    object_count: int
+
+
+VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".webm", ".mkv"}
+
+# Per-content locks: identical (bytes, prompt) requests racing in run the scene
+# pipeline once; the second waits and gets the cached result.
+_scene_locks: dict[str, asyncio.Lock] = {}
+
+
+def _scene_url(request: Request, work_dir: Path, rel: str | None) -> str | None:
+    return _files_url(request, work_dir / rel) if rel else None
+
+
+def _scene_response(request: Request, work_dir: Path, scene: dict, cached: bool) -> dict:
+    objects = []
+    for o in scene.get("objects", []):
+        info = o.get("info") or {}
+        objects.append(
+            {
+                "id": o["id"],
+                "label": o.get("label", "object"),
+                "glb_url": _scene_url(request, work_dir, o.get("glb")) or o.get("glb_remote"),
+                "splat_url": o.get("splat_url"),
+                "cutout_url": _scene_url(request, work_dir, o.get("cutout")),
+                "bbox": o.get("bbox"),
+                "score": o.get("score"),
+                "info": {
+                    "name": info.get("name"),
+                    "tags": info.get("tags") or [],
+                    "facts": info.get("facts") or [],
+                },
+                "transform": o.get("transform"),
+                "align_meta": o.get("align_meta"),
+            }
+        )
+    return {
+        "id": scene["id"],
+        "scene_glb_url": _scene_url(request, work_dir, scene.get("scene_glb")) or scene.get("scene_glb_remote"),
+        "frame_url": _scene_url(request, work_dir, scene.get("frame") or "frame.png"),
+        "prompt": scene.get("prompt", ""),
+        "objects": objects,
+        "cached": cached,
+        "timings": scene.get("timings", {}),
+        "error": scene.get("error"),
+        "frame_meta": scene.get("frame_meta"),
+        "dropped": scene.get("dropped", []),
+    }
+
+
+def _cached_scene(work_dir: Path) -> dict | None:
+    """Persisted scene iff complete (scene.json parses + frame.png exists)."""
+    sj = work_dir / "scene.json"
+    if not sj.is_file() or not (work_dir / "frame.png").is_file():
+        return None
+    try:
+        return json.loads(sj.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+@app.post(
+    "/api/scene",
+    response_model=SceneResponse,
+    tags=["scenes"],
+    summary="Photo/video → segmented objects → one shared 3D scene",
+    responses={
+        400: {"model": ErrorResponse, "description": "Empty upload, unreadable image, or video with no readable frames."},
+        500: {"model": ErrorResponse, "description": "Scene pipeline failure (fal upload/segment outage)."},
+    },
+)
+async def scene_create(
+    request: Request,
+    file: UploadFile = File(..., description="A photo (PNG/JPG/WEBP) or a short video (MP4/MOV/WEBM)."),
+    prompt: str = Form("", description="Comma-separated object names. Empty = auto mode (top objects by score)."),
+):
+    """POPFRAME backend: pick the sharpest frame (if video) → SAM 3 segments the
+    prompted objects → SAM 3D Align reconstructs + places them in one shared
+    scene GLB → per-object Claude describe. Idempotent by sha256(bytes+prompt);
+    a repeat request returns instantly with `cached: true`. If Align fails the
+    response still carries per-object 2D cutouts plus an `error` (partial >
+    nothing). If nothing matches the prompt, `objects` is [] and Align is never
+    called."""
+    data = await file.read()
+    if not data:
+        return _error(400, "Uploaded file is empty.")
+    content_type = (file.content_type or "").lower()
+    suffix = Path(file.filename or "").suffix.lower()
+    is_video = content_type.startswith("video/") or suffix in VIDEO_EXTS
+
+    digest = hashlib.sha256(data + b"\x00" + (prompt or "").encode()).hexdigest()
+    req_id = digest[:16]
+    work_dir = SCENE_DIR / req_id
+
+    scene = _cached_scene(work_dir)
+    if scene:
+        print(f"[scene {req_id}] cache hit (idempotent)", flush=True)
+        return _scene_response(request, work_dir, scene, cached=True)
+
+    lock = _scene_locks.setdefault(digest, asyncio.Lock())
+    async with lock:
+        scene = _cached_scene(work_dir)
+        if scene:
+            return _scene_response(request, work_dir, scene, cached=True)
+
+        work_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            frame_meta = None
+            if is_video:
+                try:
+                    pick = await run_in_threadpool(pick_frame, data)
+                except FramePickError as exc:
+                    return _error(400, str(exc))
+                png = pick["png"]
+                frame_meta = {
+                    "frame_index": pick["index"],
+                    "timestamp": pick["timestamp"],
+                    "sharpness": pick["sharpness"],
+                }
+            else:
+                try:
+                    png = await run_in_threadpool(scene_core.image_to_png_bytes, data)
+                except Exception:
+                    return _error(400, "Upload is not a readable image (PNG/JPG/WEBP) or video.")
+            (work_dir / "frame.png").write_bytes(png)
+
+            scene = await run_in_threadpool(scene_core.build_scene, work_dir, prompt or "", frame_meta)
+        except Exception as exc:  # noqa: BLE001 - surface pipeline failure as JSON
+            import traceback
+
+            traceback.print_exc()
+            trace_path = work_dir / "trace.json"
+            try:
+                trace = json.loads(trace_path.read_text()) if trace_path.is_file() else {"id": req_id}
+            except (json.JSONDecodeError, OSError):
+                trace = {"id": req_id}
+            trace["ok"] = False
+            trace["error"] = str(exc)
+            trace_path.write_text(json.dumps(trace, indent=2))
+            return _error(500, f"Scene pipeline failed: {exc}")
+        finally:
+            _scene_locks.pop(digest, None)
+
+    return _scene_response(request, work_dir, scene, cached=False)
+
+
+@app.get(
+    "/api/scene/{scene_id}",
+    response_model=SceneResponse,
+    tags=["scenes"],
+    summary="Fetch a cached scene by id",
+    responses={404: {"model": ErrorResponse, "description": "No completed scene with that id."}},
+)
+def scene_get(scene_id: str, request: Request):
+    """Replay a previously built scene (same Scene3D contract, `cached: true`).
+    Lets the viewer deep-link a scene (?scene=<id>) without re-uploading."""
+    if not scene_id.isalnum():
+        return _error(404, "Unknown scene id.")
+    work_dir = SCENE_DIR / scene_id
+    scene = _cached_scene(work_dir)
+    if not scene:
+        return _error(404, "Unknown scene id.")
+    return _scene_response(request, work_dir, scene, cached=True)
+
+
+@app.get(
+    "/api/scenes",
+    response_model=list[SceneListEntry],
+    tags=["scenes"],
+    summary="List cached scenes on disk",
+)
+def scenes_list(request: Request):
+    """Every completed scene under outputs/scene/ (newest first): id, prompt,
+    object labels, and request-host-rooted URLs."""
+    dirs = [d for d in SCENE_DIR.iterdir() if d.is_dir()]
+    dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+    entries = []
+    for d in dirs:
+        scene = _cached_scene(d)
+        if not scene:
+            continue
+        entries.append(
+            {
+                "id": d.name,
+                "prompt": scene.get("prompt", ""),
+                "labels": [o.get("label", "object") for o in scene.get("objects", [])],
+                "frame_url": _scene_url(request, d, scene.get("frame") or "frame.png"),
+                "scene_glb_url": _scene_url(request, d, scene.get("scene_glb")) or scene.get("scene_glb_remote"),
+                "object_count": len(scene.get("objects", [])),
+            }
+        )
+    return entries
