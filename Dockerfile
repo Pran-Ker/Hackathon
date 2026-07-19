@@ -8,7 +8,9 @@ WORKDIR /viewer
 COPY viewer/package.json viewer/package-lock.json ./
 RUN npm ci
 COPY viewer/ ./
-RUN npm run build
+# Cap Node's heap: Railway's hobby builder OOM-kills an uncapped vite build
+# (exit 137); a low ceiling forces GC instead of ballooning past the limit.
+RUN NODE_OPTIONS=--max-old-space-size=1024 npm run build
 
 # ---------- Stage 2: python runtime ----------
 FROM python:3.12-slim AS runtime
