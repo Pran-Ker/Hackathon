@@ -1,0 +1,72 @@
+{
+  "scene_id": "demo-scene-001",
+  "scene_glb_url": "/files/scene/demo-scene-001/scene.glb",
+  "frame_url": "/files/scene/demo-scene-001/frame.png",
+  "prompt": "chair, plant, sneaker",
+  "objects": [
+    {
+      "id": "obj-0",
+      "label": "chair",
+      "glb_url": "/files/scene/demo-scene-001/obj-0/model.glb",
+      "splat_url": null,
+      "cutout_url": "/files/scene/demo-scene-001/obj-0/cutout.png",
+      "bbox": [120, 340, 480, 900],
+      "score": 0.97,
+      "transform": {
+        "position": [-0.4, 0.0, 0.2],
+        "rotation": [0.0, 15.0, 0.0],
+        "scale": 1.0
+      },
+      "info": {
+        "name": "Lounge chair",
+        "tags": ["furniture", "seating"],
+        "facts": ["Detected with 97% confidence", "Reconstructed from a single frame"]
+      }
+    },
+    {
+      "id": "obj-1",
+      "label": "plant",
+      "glb_url": "/files/scene/demo-scene-001/obj-1/model.glb",
+      "splat_url": null,
+      "cutout_url": "/files/scene/demo-scene-001/obj-1/cutout.png",
+      "bbox": [620, 210, 880, 760],
+      "score": 0.92,
+      "transform": {
+        "position": [0.5, 0.0, -0.1],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [0.8, 0.8, 0.8]
+      },
+      "info": {
+        "name": "Potted plant",
+        "tags": ["decor", "greenery"],
+        "facts": ["Detected with 92% confidence"]
+      }
+    },
+    {
+      "id": "obj-2",
+      "label": "sneaker",
+      "glb_url": "/files/scene/demo-scene-001/obj-2/model.glb",
+      "splat_url": null,
+      "cutout_url": "/files/scene/demo-scene-001/obj-2/cutout.png",
+      "bbox": [400, 820, 640, 1000],
+      "score": 0.88,
+      "transform": {
+        "position": [0.0, 0.0, 0.6],
+        "rotation": [0.0, -30.0, 0.0],
+        "scale": 0.5
+      },
+      "info": {
+        "name": "Sneaker",
+        "tags": ["footwear"],
+        "facts": ["Detected with 88% confidence", "Padded cutout used for solid volume"]
+      }
+    }
+  ],
+  "cached": true,
+  "timings": {
+    "detect": 1.4,
+    "cutout": 2.1,
+    "reconstruct": 43.7,
+    "align": 6.2
+  }
+}
