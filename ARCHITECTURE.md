@@ -1,4 +1,4 @@
-# Architecture — photo → placed 3D scene (POPFRAME)
+# Architecture — photo → placed 3D scene
 
 The scene path now lives in the **pipeline** service: `POST /api/scene` takes a photo/video +
 prompt and returns a `Scene3D` JSON (frozen frame, per-object GLBs placed in one shared scene by
@@ -83,9 +83,5 @@ HologramWorkflow(image, prompt):
 - **Generic pipeline:** activities become swappable stages (`segment_activity`, `imagine_activity`,
   `upload_activity`), so the same workflow serves other segment/3D backends by swapping an activity —
   the model choice stops being hard-coded into the service.
-- **Where it already exists:** `floating-objects/temporal_pipeline/` has the scaffold (workflow +
-  activities + `run-with-temporal.sh`) with liberal timeouts and one-retry-on-costly-steps. Folding
-  `pipeline`'s `/imagine` in as `imagine_activity` (fan-out over the `output/<image_id>/` folder)
-  turns these two microservices into one orchestrated, replayable pipeline.
 - **Fan-out + fault isolation:** each object's 3D job retries independently; a slow/failed object
   doesn't block the rest of the scene.

@@ -1,11 +1,13 @@
-# POPFRAME
+# Hologram
 
 Point a photo at the server; the objects in it pop out of the frame as a placed
 3D hologram scene, each on a glowing leader line with its own info card.
 
-(working title — the iOS app will ship as **Hologram**.)
+Built by team **Warping** for the fal x Sequoia 72-Hour Video Hackathon
+(Developer Track). `POPFRAME` is the codename you'll see throughout the code.
 
-fal x Sequoia 72-Hour Video Hackathon — Developer Track.
+**Live app:** [popframe-production.up.railway.app/app/hologram.html](https://popframe-production.up.railway.app/app/hologram.html)
+· **Demo video:** [popframe-demo.vercel.app](https://popframe-demo.vercel.app)
 
 ## What it does
 
@@ -29,7 +31,7 @@ optimized GLB) replaces the scene-grade mesh with a much better one.
 
 ## The demo moment
 
-A flat photo on screen. Click "holographize". The photo freezes, tilts back,
+A flat photo on screen. Click "SCAN". The photo freezes, tilts back,
 and the dog, the person, and the chair lift out of it as real 3D meshes —
 still standing exactly where they stood in the photo — each with a glowing
 line back to its spot in the frame and a card naming it. Orbit around them.
@@ -132,10 +134,10 @@ work directory. A duplicate request — same photo, same prompt — returns
 instantly with `cached: true`, whether it's a scene or a hero mesh. Results
 live on disk under `pipeline/outputs/` with a durable manifest, so a server
 restart loses nothing and the studio sidebar survives. In-flight duplicates
-dedupe via per-digest locks, so double-clicking "holographize" costs one fal
-call, not two.
+dedupe via per-digest locks, so double-clicking "SCAN" costs one fal call,
+not two.
 
-## Known limits (honest)
+## Known limits
 
 - Align meshes are **scene-grade**: right shape, right place, soft detail.
   That's what the hero upgrade is for.
@@ -147,13 +149,3 @@ call, not two.
 - Align can succeed on the scene but miss an individual object — that object
   keeps its cutout card with `glb_url: null` and the rest of the scene is
   unaffected.
-
-## Submission checklist (Developer Track)
-
-- [x] Public GitHub repo (this one)
-- [ ] ≤3 min demo video — the photo-to-pop-out moment, then one hero upgrade
-- [x] Project description (100–200 words) — [`docs/SUBMISSION.md`](docs/SUBMISSION.md)
-- [x] Everything genuinely built during the hackathon window (Jul 17 12:30pm PT
-      – Jul 19 9:00am PT) — hosted models (SAM 3, SAM 3D Align, Hunyuan3D,
-      BiRefNet via fal) and open-source libraries (Three.js, FastAPI) are
-      tooling, not "previous work"; commit history is honest.

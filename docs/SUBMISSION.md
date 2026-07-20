@@ -1,23 +1,28 @@
-# Submission — project description (Developer Track)
+# Submission — fal x Sequoia 72-Hour Video Hackathon
 
-Draft for the 100–200 word form field. Word count: ~160.
+Developer Track · team **Warping** · submitted 2026-07-19.
 
----
+- Demo video: [popframe-demo.vercel.app](https://popframe-demo.vercel.app)
+- Repo: [github.com/Pran-Ker/Hackathon](https://github.com/Pran-Ker/Hackathon)
 
-POPFRAME turns any photo or video into a hologram. Name the objects you care
-about ("person, dog, chair") and the frame freezes on screen while those
-objects lift out of it as real 3D meshes — still positioned and scaled exactly
-as they were in the shot — each on a glowing leader line with an AI-written
-info card.
+## Project description (as submitted)
 
-Under the hood: SAM 3 segments each named concept (with an LLM retry that
-rewrites concepts SAM can't find), SAM 3D Align reconstructs and places all
-objects in one shared scene, Claude writes the cards, and a Three.js viewer
-does the pop-out. Any object can then be "hero upgraded" through a second
-pipeline (BiRefNet isolate, orbit multiview, Hunyuan3D v3) into a
-presentation-quality mesh.
+Every photo is a frozen 3D scene. Hologram unfreezes it.
 
-Everything is content-addressed and idempotent — a repeated photo returns
-instantly from cache — and every failure degrades gracefully: if 3D fails you
-still get 2D cutout cards. A scene builds in about 40 seconds; a hero mesh in
-about three minutes. Built entirely on fal-hosted models.
+Upload a photo or a short video and name what you see: "chair, plant,
+sneaker". SAM 3 segments each object. SAM 3D Align (`fal-ai/sam-3/3d-objects`)
+rebuilds them as meshes and places them in one shared scene. Position and
+scale come from the photo, not from us. Claude names each object and writes
+its info card.
+
+The viewer freezes the frame, tilts it back, and lifts every object out on a
+glowing leader line. Each one stands exactly where it stood in the photo.
+Orbit the scene. Click an object and it glows with its card. One more click
+swaps it for a hero-quality Hunyuan3D v3 mesh.
+
+A cold scan takes about 40 seconds. Repeat scans return instantly; the backend
+caches by content hash. If reconstruction fails you still get 2D cutout cards.
+Partial beats nothing.
+
+Stack: fal (SAM 3, SAM 3D Align, Hunyuan3D v3, BiRefNet), Claude, FastAPI,
+Three.js.
